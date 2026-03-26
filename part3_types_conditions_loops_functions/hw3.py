@@ -101,18 +101,12 @@ def cost_handler(category_name: str, amount: float, income_date: str) -> str:
     if common not in EXPENSE_CATEGORIES or target not in EXPENSE_CATEGORIES[common]:
         financial_transactions_storage.append({})
         return NOT_EXISTS_CATEGORY
-    financial_transactions_storage.append(
-        {CATEGORY: category_name, AMOUNT: amount, DATE: date_tuple}
-    )
+    financial_transactions_storage.append({CATEGORY: category_name, AMOUNT: amount, DATE: date_tuple})
     return OP_SUCCESS_MSG
 
 
 def cost_categories_handler() -> str:
-    categories = [
-        f"{common}::{target}"
-        for common, targets in EXPENSE_CATEGORIES.items()
-        for target in targets
-    ]
+    categories = [f"{common}::{target}" for common, targets in EXPENSE_CATEGORIES.items() for target in targets]
     return "\n".join(categories)
 
 
@@ -136,9 +130,7 @@ def total_up_to_date(report_day: int, report_month: int, report_year: int) -> fl
     return total
 
 
-def month_stats(
-    report_month: int, report_year: int
-) -> tuple[float, float, dict[str, float]]:
+def month_stats(report_month: int, report_year: int) -> tuple[float, float, dict[str, float]]:
     income = float(0)
     expenses = float(0)
     category_expenses: dict[str, float] = {}
@@ -155,9 +147,7 @@ def month_stats(
                 expenses += amount
                 category = transaction.get(CATEGORY, "just nothing")
                 target = category.split("::", 1)[1]
-                category_expenses[target] = (
-                    category_expenses.get(target, float(0)) + amount
-                )
+                category_expenses[target] = category_expenses.get(target, float(0)) + amount
             else:
                 income += transaction[AMOUNT]
     return income, expenses, category_expenses
@@ -169,9 +159,7 @@ def profit_stats(income: float, expenses: float) -> str:
     return "loss amounted to {(expenses - income):.2f} rubles."
 
 
-def outcome_changer(
-    category_expenses: dict[str, float], outcome: list[str]
-) -> list[str]:
+def outcome_changer(category_expenses: dict[str, float], outcome: list[str]) -> list[str]:
     if category_expenses:
         sorted_category_expenses = sorted(category_expenses.items())
         for i, (category, amount) in enumerate(sorted_category_expenses, 1):
