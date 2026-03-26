@@ -26,46 +26,162 @@ financial_transactions_storage: list[dict[str, Any]] = []
 
 
 def is_leap_year(year: int) -> bool:
-    """
-    Для заданного года определяет: високосный (True) или невисокосный (False).
-
-    :param int year: Проверяемый год
-    :return: Значение високосности.
-    :rtype: bool
-    """
-    return bool(year)  # Change this
+    return (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
 
 
 def extract_date(maybe_dt: str) -> tuple[int, int, int] | None:
-    """
-    Парсит дату формата DD-MM-YYYY из строки.
+    parts = maybe_dt.split("-")
+    if len(parts) != 3:
+        return None
+    day = int(parts[0])
+    month = int(parts[1])
+    year = int(parts[2])
 
-    :param str maybe_dt: Проверяемая строка
-    :return: typle формата (день, месяц, год) или None, если дата неправильная.
-    :rtype: tuple[int, int, int] | None
-    """
+    days_in_month = [31, 29 if is_leap_year(year) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+
+    if 1 <= month <= 12 and 1 <= day <= days_in_month[month - 1] and year >= 0:
+        return day, month, year
+
+    return None
 
 
 def income_handler(amount: float, income_date: str) -> str:
-    financial_transactions_storage.append({"amount": amount, "date": income_date})
+    date_tuple = extract_date(income_date)
+    if date_tuple is None:
+        financial_transactions_storage.append({})
+        return INCORRECT_DATE_MSG
+    if amount <= 0:
+        financial_transactions_storage.append({})
+        return NONPOSITIVE_VALUE_MSG
+    financial_transactions_storage.append({"amount": amount, "date": date_tuple})
     return OP_SUCCESS_MSG
 
 
 def cost_handler(category_name: str, amount: float, income_date: str) -> str:
-    financial_transactions_storage.append({"category": category_name, "amount": amount, "date": income_date})
+    date_tuple = extract_date(income_date)
+    if date_tuple is None:
+        financial_transactions_storage.append({})
+        return INCORRECT_DATE_MSG
+    if amount <= 0:
+        financial_transactions_storage.append({})
+        return NONPOSITIVE_VALUE_MSG
+    if "::" not in category_name:
+        financial_transactions_storage.append({})
+        return NOT_EXISTS_CATEGORY
+    common, target = category_name.split("::", 1)
+    if common not in EXPENSE_CATEGORIES or target not in EXPENSE_CATEGORIES[common]:
+        financial_transactions_storage.append({})
+        return NOT_EXISTS_CATEGORY
+    financial_transactions_storage.append({"category": category_name, "amount": amount, "date": date_tuple})
     return OP_SUCCESS_MSG
 
 
 def cost_categories_handler() -> str:
-    return "\n".join({})
+    categories = []
+    for common, targets in EXPENSE_CATEGORIES.items():
+        for target in targets:
+            categories.append(f"{common}::{target}")
+    return "\n".join(categories)
 
 
 def stats_handler(report_date: str) -> str:
-    return f"Statistic for {report_date}"
+    report_date_tuple = extract_date(report_date)
+    if report_date_tuple is None:
+        return INCORRECT_DATE_MSG
+    report_day, report_month, report_year = report_date_tuple
+
+    total = 0.0
+    income = 0.0
+    expenses = 0.0
+    category_expenses = {}
+
+    for transaction in financial_transactions_storage:
+        if transaction == {}:
+            continue
+        date_value = transaction.get("date")
+        if not isinstance(date_value, tuple) or len(date_value) != 3:
+            date_value = None
+        if isinstance(date_value, str):
+            date_value = extract_date(date_value)
+        if date_value is None:
+            continue
+        day, month, year = transaction["date"]
+        if (year, month, day) <= (report_year, report_month, report_day):
+            if "category" not in transaction:
+                total += transaction["amount"]
+            else:
+                total -= transaction["amount"]
+        if (month, year) == (report_month, report_year):
+            if "category" in transaction:
+                expenses += transaction["amount"]
+                target = transaction["category"].split("::", 1)[1]
+                category_expenses[target] = category_expenses.get(target, 0.0) + transaction["amount"]
+            else:
+                income += transaction["amount"]
+
+    if income >= expenses:
+        profit = f"profit amounted to {(income - expenses):.2f} rubles."
+    else:
+        profit = f"loss amounted to {(expenses - income):.2f} rubles."
+
+    outcome = [
+        f"Your statistics as of {report_date}:",
+        f"Total capital: {total:.2f} rubles",
+        f"This month, the {profit}",
+        f"Income: {income:.2f} rubles",
+        f"Expenses: {expenses:.2f} rubles",
+        "",
+        "Details (category: amount):",
+    ]
+
+    if category_expenses:
+        sorted_category_expenses = sorted(category_expenses.items())
+        for i, (category, amount) in enumerate(sorted_category_expenses, 1):
+            outcome.append(f"{i}. {category} : {amount:.2f}")
+
+    return "\n".join(outcome)
 
 
 def main() -> None:
-    """Ваш код здесь"""
+    while True:
+        line = input()
+        if not line:
+            print(UNKNOWN_COMMAND_MSG)
+            continue
+        parts = line.split()
+        cmd = parts[0]
+        if cmd == "income":
+            if len(parts) != 3:
+                print(UNKNOWN_COMMAND_MSG)
+                continue
+            amount = float(parts[1].replace(",", "."))
+            date = parts[2]
+            print(income_handler(amount, date))
+        elif cmd == "cost":
+            if len(parts) == 2 and parts[1] == "categories":
+                print(cost_categories_handler())
+                continue
+            if len(parts) != 4:
+                print(UNKNOWN_COMMAND_MSG)
+                continue
+
+            category = parts[1]
+            amount = float(parts[2].replace(",", "."))
+            date = parts[3]
+
+            outcome = cost_handler(category, amount, date)
+            if outcome == NOT_EXISTS_CATEGORY:
+                print(cost_categories_handler())
+            else:
+                print(outcome)
+        elif cmd == "stats":
+            if len(parts) != 2:
+                print(UNKNOWN_COMMAND_MSG)
+                continue
+            date = parts[1]
+            print(stats_handler(date))
+        else:
+            print(UNKNOWN_COMMAND_MSG)
 
 
 if __name__ == "__main__":
