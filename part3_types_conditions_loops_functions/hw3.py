@@ -21,6 +21,13 @@ EXPENSE_CATEGORIES = {
     "Other": ("SomeCategory", "SomeOtherCategory"),
 }
 
+EXPECTED_DATE_PARTS = 3
+MAX_MONTH = 12
+
+INCOME_ARGS = 3
+COST_CATEGORIES_ARGS = 2
+COST_ARGS = 4
+STATS_ARGS = 2
 
 financial_transactions_storage: list[dict[str, Any]] = []
 
@@ -31,7 +38,7 @@ def is_leap_year(year: int) -> bool:
 
 def extract_date(maybe_dt: str) -> tuple[int, int, int] | None:
     parts = maybe_dt.split("-")
-    if len(parts) != 3:
+    if len(parts) != EXPECTED_DATE_PARTS:
         return None
     day = int(parts[0])
     month = int(parts[1])
@@ -39,7 +46,7 @@ def extract_date(maybe_dt: str) -> tuple[int, int, int] | None:
 
     days_in_month = [31, 29 if is_leap_year(year) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
 
-    if 1 <= month <= 12 and 1 <= day <= days_in_month[month - 1] and year >= 0:
+    if 1 <= month <= MAX_MONTH and 1 <= day <= days_in_month[month - 1] and year >= 0:
         return day, month, year
 
     return None
@@ -77,19 +84,11 @@ def cost_handler(category_name: str, amount: float, income_date: str) -> str:
 
 
 def cost_categories_handler() -> str:
-    categories = []
-    for common, targets in EXPENSE_CATEGORIES.items():
-        for target in targets:
-            categories.append(f"{common}::{target}")
+    categories = [f"{common}::{target}" for common, targets in EXPENSE_CATEGORIES.items() for target in targets]
     return "\n".join(categories)
 
 
-def stats_handler(report_date: str) -> str:
-    report_date_tuple = extract_date(report_date)
-    if report_date_tuple is None:
-        return INCORRECT_DATE_MSG
-    report_day, report_month, report_year = report_date_tuple
-
+def all_calculations(report_day: int, report_month: int, report_year: int) -> tuple[float, float, float, dict]:
     total = 0.0
     income = 0.0
     expenses = 0.0
@@ -98,12 +97,7 @@ def stats_handler(report_date: str) -> str:
     for transaction in financial_transactions_storage:
         if transaction == {}:
             continue
-        date_value = transaction.get("date")
-        if not isinstance(date_value, tuple) or len(date_value) != 3:
-            date_value = None
-        if isinstance(date_value, str):
-            date_value = extract_date(date_value)
-        if date_value is None:
+        if len(transaction["date"]) != EXPECTED_DATE_PARTS:
             continue
         day, month, year = transaction["date"]
         if (year, month, day) <= (report_year, report_month, report_day):
@@ -118,6 +112,17 @@ def stats_handler(report_date: str) -> str:
                 category_expenses[target] = category_expenses.get(target, 0.0) + transaction["amount"]
             else:
                 income += transaction["amount"]
+
+    return total, income, expenses, category_expenses
+
+
+def stats_handler(report_date: str) -> str:
+    report_date_tuple = extract_date(report_date)
+    if report_date_tuple is None:
+        return INCORRECT_DATE_MSG
+    report_day, report_month, report_year = report_date_tuple
+
+    total, income, expenses, category_expenses = all_calculations(report_day, report_month, report_year)
 
     if income >= expenses:
         profit = f"profit amounted to {(income - expenses):.2f} rubles."
@@ -142,6 +147,42 @@ def stats_handler(report_date: str) -> str:
     return "\n".join(outcome)
 
 
+def income_cmd_handler(parts: list[str]) -> None:
+    if len(parts) != INCOME_ARGS:
+        print(UNKNOWN_COMMAND_MSG)
+        return
+    amount = float(parts[1].replace(",", "."))
+    date = parts[2]
+    print(income_handler(amount, date))
+
+
+def cost_cmd_handler(parts: list[str]) -> None:
+    if len(parts) == COST_CATEGORIES_ARGS and parts[1] == "categories":
+        print(cost_categories_handler())
+        return
+    if len(parts) != COST_ARGS:
+        print(UNKNOWN_COMMAND_MSG)
+        return
+
+    category = parts[1]
+    amount = float(parts[2].replace(",", "."))
+    date = parts[3]
+
+    outcome = cost_handler(category, amount, date)
+    if outcome == NOT_EXISTS_CATEGORY:
+        print(cost_categories_handler())
+    else:
+        print(outcome)
+
+
+def stats_cmd_handler(parts: list[str]) -> None:
+    if len(parts) != STATS_ARGS:
+        print(UNKNOWN_COMMAND_MSG)
+        return
+    date = parts[1]
+    print(stats_handler(date))
+
+
 def main() -> None:
     while True:
         line = input()
@@ -151,35 +192,11 @@ def main() -> None:
         parts = line.split()
         cmd = parts[0]
         if cmd == "income":
-            if len(parts) != 3:
-                print(UNKNOWN_COMMAND_MSG)
-                continue
-            amount = float(parts[1].replace(",", "."))
-            date = parts[2]
-            print(income_handler(amount, date))
+            income_cmd_handler(parts)
         elif cmd == "cost":
-            if len(parts) == 2 and parts[1] == "categories":
-                print(cost_categories_handler())
-                continue
-            if len(parts) != 4:
-                print(UNKNOWN_COMMAND_MSG)
-                continue
-
-            category = parts[1]
-            amount = float(parts[2].replace(",", "."))
-            date = parts[3]
-
-            outcome = cost_handler(category, amount, date)
-            if outcome == NOT_EXISTS_CATEGORY:
-                print(cost_categories_handler())
-            else:
-                print(outcome)
+            cost_cmd_handler(parts)
         elif cmd == "stats":
-            if len(parts) != 2:
-                print(UNKNOWN_COMMAND_MSG)
-                continue
-            date = parts[1]
-            print(stats_handler(date))
+            stats_cmd_handler(parts)
         else:
             print(UNKNOWN_COMMAND_MSG)
 
