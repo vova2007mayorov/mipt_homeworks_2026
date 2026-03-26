@@ -88,11 +88,13 @@ def cost_categories_handler() -> str:
     return "\n".join(categories)
 
 
-def all_calculations(report_day: int, report_month: int, report_year: int) -> tuple[float, float, float, dict]:
+def all_calculations(
+    report_day: int, report_month: int, report_year: int
+) -> tuple[float, float, float, dict[str, float]]:
     total = 0.0
     income = 0.0
     expenses = 0.0
-    category_expenses = {}
+    category_expenses: dict[str, float] = {}
 
     for transaction in financial_transactions_storage:
         if transaction == {}:
