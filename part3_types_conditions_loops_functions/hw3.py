@@ -29,11 +29,27 @@ COST_CATEGORIES_ARGS = 2
 COST_ARGS = 4
 STATS_ARGS = 2
 
+AMOUNT = "amount"
+DATE = "date"
+CATEGORY = "category"
+
+# fmt:off
+DAYS_IN_MONTH = [
+    31, 28, 31, 30, 31, 30,
+    31, 31, 30, 31, 30, 31
+    ]
+# fmt:on
+
+
 financial_transactions_storage: list[dict[str, Any]] = []
 
 
 def is_leap_year(year: int) -> bool:
-    return (year % 4 == 0 and year % 100 != 0) or (year % 400 == 0)
+    if year % 4 == 0:
+        if year % 100 == 0:
+            return year % 400 == 0
+        return True
+    return False
 
 
 def extract_date(maybe_dt: str) -> tuple[int, int, int] | None:
@@ -44,9 +60,15 @@ def extract_date(maybe_dt: str) -> tuple[int, int, int] | None:
     month = int(parts[1])
     year = int(parts[2])
 
-    days_in_month = [31, 29 if is_leap_year(year) else 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+    if is_leap_year(year):
+        DAYS_IN_MONTH[1] = 29
+    else:
+        DAYS_IN_MONTH[1] = 28
 
-    if 1 <= month <= MAX_MONTH and 1 <= day <= days_in_month[month - 1] and year >= 0:
+    month_ok = 1 <= month <= MAX_MONTH
+    day_ok = 1 <= day <= DAYS_IN_MONTH[month - 1]
+    year_ok = year >= 0
+    if month_ok and day_ok and year_ok:
         return day, month, year
 
     return None
@@ -60,7 +82,7 @@ def income_handler(amount: float, income_date: str) -> str:
     if amount <= 0:
         financial_transactions_storage.append({})
         return NONPOSITIVE_VALUE_MSG
-    financial_transactions_storage.append({"amount": amount, "date": date_tuple})
+    financial_transactions_storage.append({AMOUNT: amount, DATE: date_tuple})
     return OP_SUCCESS_MSG
 
 
@@ -79,43 +101,82 @@ def cost_handler(category_name: str, amount: float, income_date: str) -> str:
     if common not in EXPENSE_CATEGORIES or target not in EXPENSE_CATEGORIES[common]:
         financial_transactions_storage.append({})
         return NOT_EXISTS_CATEGORY
-    financial_transactions_storage.append({"category": category_name, "amount": amount, "date": date_tuple})
+    financial_transactions_storage.append(
+        {CATEGORY: category_name, AMOUNT: amount, DATE: date_tuple}
+    )
     return OP_SUCCESS_MSG
 
 
 def cost_categories_handler() -> str:
-    categories = [f"{common}::{target}" for common, targets in EXPENSE_CATEGORIES.items() for target in targets]
+    categories = [
+        f"{common}::{target}"
+        for common, targets in EXPENSE_CATEGORIES.items()
+        for target in targets
+    ]
     return "\n".join(categories)
 
 
-def all_calculations(
-    report_day: int, report_month: int, report_year: int
-) -> tuple[float, float, float, dict[str, float]]:
-    total = 0.0
-    income = 0.0
-    expenses = 0.0
+def transaction_check(transaction: dict[str, Any]) -> bool:
+    if not transaction:
+        return False
+    return len(transaction[DATE]) != EXPECTED_DATE_PARTS
+
+
+def total_up_to_date(report_day: int, report_month: int, report_year: int) -> float:
+    total = float(0)
+    for transaction in financial_transactions_storage:
+        if not transaction_check(transaction):
+            continue
+        day, month, year = transaction[DATE]
+        if (year, month, day) <= (report_year, report_month, report_day):
+            if CATEGORY in transaction:
+                total -= transaction[AMOUNT]
+            else:
+                total += transaction[AMOUNT]
+    return total
+
+
+def month_stats(
+    report_month: int, report_year: int
+) -> tuple[float, float, dict[str, float]]:
+    income = float(0)
+    expenses = float(0)
     category_expenses: dict[str, float] = {}
 
     for transaction in financial_transactions_storage:
-        if transaction == {}:
+        if not transaction_check(transaction):
             continue
-        if len(transaction["date"]) != EXPECTED_DATE_PARTS:
-            continue
-        day, month, year = transaction["date"]
-        if (year, month, day) <= (report_year, report_month, report_day):
-            if "category" not in transaction:
-                total += transaction["amount"]
-            else:
-                total -= transaction["amount"]
+        date_tuple = transaction[DATE]
+        month = date_tuple[1]
+        year = date_tuple[2]
         if (month, year) == (report_month, report_year):
-            if "category" in transaction:
-                expenses += transaction["amount"]
-                target = transaction["category"].split("::", 1)[1]
-                category_expenses[target] = category_expenses.get(target, 0.0) + transaction["amount"]
+            if CATEGORY in transaction:
+                amount = transaction[AMOUNT]
+                expenses += amount
+                category = transaction.get(CATEGORY, "just nothing")
+                target = category.split("::", 1)[1]
+                category_expenses[target] = (
+                    category_expenses.get(target, float(0)) + amount
+                )
             else:
-                income += transaction["amount"]
+                income += transaction[AMOUNT]
+    return income, expenses, category_expenses
 
-    return total, income, expenses, category_expenses
+
+def profit_stats(income: float, expenses: float) -> str:
+    if income >= expenses:
+        return "profit amounted to {(income - expenses):.2f} rubles."
+    return "loss amounted to {(expenses - income):.2f} rubles."
+
+
+def outcome_changer(
+    category_expenses: dict[str, float], outcome: list[str]
+) -> list[str]:
+    if category_expenses:
+        sorted_category_expenses = sorted(category_expenses.items())
+        for i, (category, amount) in enumerate(sorted_category_expenses, 1):
+            outcome.append(f"{i}. {category} : {amount:.2f}")
+    return outcome
 
 
 def stats_handler(report_date: str) -> str:
@@ -124,12 +185,11 @@ def stats_handler(report_date: str) -> str:
         return INCORRECT_DATE_MSG
     report_day, report_month, report_year = report_date_tuple
 
-    total, income, expenses, category_expenses = all_calculations(report_day, report_month, report_year)
+    total = total_up_to_date(report_day, report_month, report_year)
 
-    if income >= expenses:
-        profit = f"profit amounted to {(income - expenses):.2f} rubles."
-    else:
-        profit = f"loss amounted to {(expenses - income):.2f} rubles."
+    income, expenses, category_expenses = month_stats(report_month, report_year)
+
+    profit = profit_stats(income, expenses)
 
     outcome = [
         f"Your statistics as of {report_date}:",
@@ -141,10 +201,7 @@ def stats_handler(report_date: str) -> str:
         "Details (category: amount):",
     ]
 
-    if category_expenses:
-        sorted_category_expenses = sorted(category_expenses.items())
-        for i, (category, amount) in enumerate(sorted_category_expenses, 1):
-            outcome.append(f"{i}. {category} : {amount:.2f}")
+    outcome_changer(category_expenses, outcome)
 
     return "\n".join(outcome)
 
@@ -185,22 +242,25 @@ def stats_cmd_handler(parts: list[str]) -> None:
     print(stats_handler(date))
 
 
+def cmd_checker(parts: list[str]) -> None:
+    cmd = parts[0]
+    if cmd == "income":
+        income_cmd_handler(parts)
+    elif cmd == "cost":
+        cost_cmd_handler(parts)
+    elif cmd == "stats":
+        stats_cmd_handler(parts)
+    else:
+        print(UNKNOWN_COMMAND_MSG)
+
+
 def main() -> None:
     while True:
         line = input()
         if not line:
             print(UNKNOWN_COMMAND_MSG)
-            continue
-        parts = line.split()
-        cmd = parts[0]
-        if cmd == "income":
-            income_cmd_handler(parts)
-        elif cmd == "cost":
-            cost_cmd_handler(parts)
-        elif cmd == "stats":
-            stats_cmd_handler(parts)
-        else:
-            print(UNKNOWN_COMMAND_MSG)
+            break
+        cmd_checker(line.split())
 
 
 if __name__ == "__main__":
