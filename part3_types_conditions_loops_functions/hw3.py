@@ -40,6 +40,8 @@ DAYS_IN_MONTH = [
     ]
 # fmt:on
 
+ZERO = float(0)
+
 
 financial_transactions_storage: list[dict[str, Any]] = []
 
@@ -110,16 +112,16 @@ def cost_categories_handler() -> str:
     return "\n".join(categories)
 
 
-def transaction_check(transaction: dict[str, Any]) -> bool:
+def transaction_is_ok(transaction: dict[str, Any]) -> bool:
     if not transaction:
         return False
-    return len(transaction[DATE]) != EXPECTED_DATE_PARTS
+    return len(transaction[DATE]) == EXPECTED_DATE_PARTS
 
 
 def total_up_to_date(report_day: int, report_month: int, report_year: int) -> float:
-    total = float(0)
+    total = ZERO
     for transaction in financial_transactions_storage:
-        if not transaction_check(transaction):
+        if not transaction_is_ok(transaction):
             continue
         day, month, year = transaction[DATE]
         if (year, month, day) <= (report_year, report_month, report_day):
@@ -131,12 +133,12 @@ def total_up_to_date(report_day: int, report_month: int, report_year: int) -> fl
 
 
 def month_stats(report_month: int, report_year: int) -> tuple[float, float, dict[str, float]]:
-    income = float(0)
-    expenses = float(0)
+    income = ZERO
+    expenses = ZERO
     category_expenses: dict[str, float] = {}
 
     for transaction in financial_transactions_storage:
-        if not transaction_check(transaction):
+        if not transaction_is_ok(transaction):
             continue
         date_tuple = transaction[DATE]
         month = date_tuple[1]
@@ -147,7 +149,7 @@ def month_stats(report_month: int, report_year: int) -> tuple[float, float, dict
                 expenses += amount
                 category = transaction.get(CATEGORY, "just nothing")
                 target = category.split("::", 1)[1]
-                category_expenses[target] = category_expenses.get(target, float(0)) + amount
+                category_expenses[target] = category_expenses.get(target, ZERO) + amount
             else:
                 income += transaction[AMOUNT]
     return income, expenses, category_expenses
@@ -155,8 +157,8 @@ def month_stats(report_month: int, report_year: int) -> tuple[float, float, dict
 
 def profit_stats(income: float, expenses: float) -> str:
     if income >= expenses:
-        return "profit amounted to {(income - expenses):.2f} rubles."
-    return "loss amounted to {(expenses - income):.2f} rubles."
+        return f"profit amounted to {(income - expenses):.2f} rubles."
+    return f"loss amounted to {(expenses - income):.2f} rubles."
 
 
 def outcome_changer(category_expenses: dict[str, float], outcome: list[str]) -> list[str]:
