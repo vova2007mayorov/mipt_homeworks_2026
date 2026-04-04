@@ -156,9 +156,10 @@ def month_stats(report_month: int, report_year: int) -> tuple[float, float, dict
 
 
 def profit_stats(income: float, expenses: float) -> str:
+    difference = income - expenses
     if income >= expenses:
-        return f"profit amounted to {(income - expenses):.2f} rubles."
-    return f"loss amounted to {(expenses - income):.2f} rubles."
+        return f"profit amounted to {(difference):.2f} rubles."
+    return f"loss amounted to {(difference):.2f} rubles."
 
 
 def outcome_changer(category_expenses: dict[str, float], outcome: list[str]) -> list[str]:
