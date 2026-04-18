@@ -1,4 +1,6 @@
+import functools
 import json
+from datetime import UTC, datetime, timedelta
 from typing import Any, ParamSpec, Protocol, TypeVar
 from urllib.request import urlopen
 
@@ -20,19 +22,59 @@ class CallableWithMeta(Protocol[P, R_co]):
 
 
 class BreakerError(Exception):
-    pass
+    def __init__(self, func_name: str, block_time: datetime):
+        super().__init__(TOO_MUCH)
+        self.func_name = func_name
+        self.block_time = block_time
 
 
 class CircuitBreaker:
     def __init__(
         self,
-        critical_count: int,
-        time_to_recover: int,
-        triggers_on: type[Exception],
-    ): ...
+        critical_count: int = 5,
+        time_to_recover: int = 30,
+        triggers_on: type[Exception] = Exception,
+    ):
+        value_erros = []
+        if not (isinstance(critical_count, int) and critical_count > 0):
+            value_erros.append(ValueError(INVALID_CRITICAL_COUNT))
+        if not (isinstance(time_to_recover, int) and time_to_recover > 0):
+            value_erros.append(ValueError(INVALID_RECOVERY_TIME))
+
+        if value_erros:
+            raise ExceptionGroup(VALIDATIONS_FAILED, value_erros)
+
+        self.critical_count = critical_count
+        self.time_to_recover = time_to_recover
+        self.triggers_on = triggers_on
+
+        self._count_fails: int = 0
+        self._block_time: datetime | None = None
 
     def __call__(self, func: CallableWithMeta[P, R_co]) -> CallableWithMeta[P, R_co]:
-        raise NotImplementedError
+        @functools.wraps(func)
+        def wrapper(*args: P.args, **kwargs: P.kwargs) -> R_co:
+            func_name = f"{func.__module__}.{func.__name__}"
+            if self._block_time and datetime.now(UTC) < self._block_time + timedelta(seconds=self.time_to_recover):
+                raise BreakerError(func_name, self._block_time)
+
+            try:
+                result = func(*args, **kwargs)
+            except Exception as error:
+                if isinstance(error, self.triggers_on):
+                    self._count_fails += 1
+
+                    if self._count_fails >= self.critical_count:
+                        self._block_time = datetime.now(UTC)
+                        raise BreakerError(func_name, self._block_time) from error
+
+                raise
+            else:
+                self._count_fails = 0
+                self._block_time = None
+                return result
+
+        return wrapper
 
 
 circuit_breaker = CircuitBreaker(5, 30, Exception)
