@@ -62,22 +62,24 @@ class CircuitBreaker:
         return wrapper
 
     def _args_check(self, critical_count: int, time_to_recover: int) -> None:
-        value_erros = []
+        value_errors = []
         if not (isinstance(critical_count, int) and critical_count > 0):
-            value_erros.append(ValueError(INVALID_CRITICAL_COUNT))
+            value_errors.append(ValueError(INVALID_CRITICAL_COUNT))
         if not (isinstance(time_to_recover, int) and time_to_recover > 0):
-            value_erros.append(ValueError(INVALID_RECOVERY_TIME))
+            value_errors.append(ValueError(INVALID_RECOVERY_TIME))
 
-        if value_erros:
-            raise ExceptionGroup(VALIDATIONS_FAILED, value_erros)
+        if value_errors:
+            raise ExceptionGroup(VALIDATIONS_FAILED, value_errors)
 
     def _block_time_check(self, func_name: str) -> None:
         if not self._block_time:
             return
 
         time_when_recover = self._block_time + timedelta(seconds=self.time_to_recover)
-        if self._block_time and datetime.now(UTC) < time_when_recover:
+        if datetime.now(UTC) < time_when_recover:
             raise BreakerError(func_name, self._block_time)
+        self._count_fails = 0
+        self._block_time = None
 
     def _except_process(self, func_name: str, error: Exception) -> None:
         if not isinstance(error, self.triggers_on):
